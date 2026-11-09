@@ -29,7 +29,8 @@ export default function GoalsScreen() {
     <Screen>
       <Title>Цели</Title>
       <GhostButton label="Новая цель" onPress={() => router.push("/goal-form")} />
-      <GhostButton label="Руководства" onPress={() => router.push("/guides")} />
+      <GhostButton label="Инструкция раздела" onPress={() => router.push("/guides/goals-how")} />
+      <GhostButton label="Все инструкции" onPress={() => router.push("/guides")} />
 
       <Card>
         <Title>Приоритеты (до трёх)</Title>

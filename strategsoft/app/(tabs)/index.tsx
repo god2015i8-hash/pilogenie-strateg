@@ -1,9 +1,10 @@
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { useApp } from "@/src/state/AppProvider";
-import { Card, EmptyState, Screen, Subtitle, Title, useThemeColors } from "@/src/ui/components";
+import { Card, EmptyState, GhostButton, Screen, Subtitle, Title, useThemeColors } from "@/src/ui/components";
 import { formatLongDate, todayISO } from "@/src/lib/dates";
-import { dayTasks, getOrSuggestWeek, weekProgress } from "@/src/services/planService";
+import { dayProgress, dayTasks, getOrSuggestWeek, weekProgress } from "@/src/services/planService";
+import { splitTitleTag } from "@/src/lib/tags";
 import { todayHabitProgress } from "@/src/services/habitService";
 import { monthReport } from "@/src/services/financeService";
 import { formatMoney } from "@/src/lib/money";
@@ -15,7 +16,9 @@ export default function TodayScreen() {
   const today = todayISO();
   const week = getOrSuggestWeek(db, today);
   const tasks = dayTasks(db, today);
-  const big = tasks.filter((t) => t.isBig);
+  const big = tasks.filter((t) => t.isBig).slice(0, 3);
+  const rest = tasks.filter((t) => !big.includes(t));
+  const day = dayProgress(tasks);
   const habits = todayHabitProgress(db, today);
   const mood = db.moodEntries.find((e) => e.date === today);
   const finance = monthReport(db, today);
@@ -29,6 +32,7 @@ export default function TodayScreen() {
         {formatLongDate(today)}
         {db.settings.demoMode ? " · демонстрационный режим" : ""}
       </Subtitle>
+      <GhostButton label="Инструкция Strategsoft" onPress={() => router.push("/guides/start-strategsoft")} />
       {progress ? (
         <Subtitle>
           Неделя: {progress.done} из {progress.total} задач · {progress.percent}%
@@ -40,16 +44,32 @@ export default function TodayScreen() {
       <Pressable onPress={() => router.push("/plan")}>
         <Card>
           <Title>Главные дела</Title>
+          <Subtitle>Итог дня: {day.text}</Subtitle>
           {big.length ? (
-            big.map((t) => (
-              <Text key={t.id} style={{ color: c.text, fontSize: 16 }}>
-                {t.status === "done" ? "☑ " : "☐ "}
-                {t.title}
-              </Text>
-            ))
+            big.map((t) => {
+              const parts = splitTitleTag(t.title);
+              const cat = db.taskCategories.find((x) => x.id === t.categoryId);
+              return (
+                <Text key={t.id} style={{ color: c.text, fontSize: 16 }}>
+                  {t.status === "done" ? "☑ " : "☐ "}★ {parts.text}
+                  {parts.tag ? <Text style={{ color: cat?.color ?? "#C9A227" }}> #{parts.tag}</Text> : null}
+                </Text>
+              );
+            })
           ) : (
             <EmptyState title="Нет главных дел на сегодня" action="Добавить" onAction={() => router.push({ pathname: "/task-form", params: { date: today, big: "1" } })} />
           )}
+          {rest.length ? (
+            <>
+              <Subtitle>Задачи</Subtitle>
+              {rest.map((t) => (
+                <Text key={t.id} style={{ color: c.text, fontSize: 16 }}>
+                  {t.status === "done" ? "☑ " : "☐ "}
+                  {t.title}
+                </Text>
+              ))}
+            </>
+          ) : null}
         </Card>
       </Pressable>
 

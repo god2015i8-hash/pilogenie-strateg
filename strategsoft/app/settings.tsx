@@ -51,6 +51,7 @@ export default function SettingsScreen() {
 
       <Card>
         <Title>Категории задач</Title>
+        <Subtitle>В задаче напишите тег с решёткой, например #работа — он подсветит строку цветом категории.</Subtitle>
         {db.taskCategories.map((cat) => (
           <GhostButton
             key={cat.id}
@@ -173,7 +174,7 @@ export default function SettingsScreen() {
       </Card>
 
       <GhostButton label="Цели" onPress={() => router.push("/goals")} />
-      <GhostButton label="Руководства" onPress={() => router.push("/guides")} />
+      <GhostButton label="Инструкции Strategsoft" onPress={() => router.push("/guides")} />
       <GhostButton label="Импорт данных" onPress={() => router.push("/import")} />
       <PrimaryButton
         label={db.settings.demoMode ? "Демо-режим включён (перезагрузить демо)" : "Включить демонстрационный режим"}

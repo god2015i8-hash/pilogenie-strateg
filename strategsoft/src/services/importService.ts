@@ -1,6 +1,8 @@
 import type { AppDatabase, ISODate, NamedColor, RecordSource, Task } from "../types/models";
-import { excelSerialToISO, startOfWeek } from "../lib/dates";
+import { excelSerialToISO, startOfWeek, todayISO } from "../lib/dates";
 import { createId } from "../lib/id";
+import { parseHashtag } from "../lib/tags";
+import { emptyReview, makeWeek } from "./planService";
 
 export interface ColumnMapping {
   title?: string;
@@ -108,12 +110,10 @@ function cellDate(value: unknown): ISODate | null {
   return null;
 }
 
-function parseHashtag(title: string, categories: NamedColor[]): { title: string; categoryId: string | null } {
-  const match = title.match(/#([^\s#]+)/);
-  if (!match) return { title: title.trim(), categoryId: null };
-  const tag = match[1].toLowerCase();
-  const cat = categories.find((c) => c.name.toLowerCase() === tag);
-  return { title: title.replace(/#[^\s#]+/g, "").trim(), categoryId: cat?.id ?? null };
+function truthy(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "да" || s === "☑";
 }
 
 export function applyWeekmarkWorkbook(
@@ -122,65 +122,78 @@ export function applyWeekmarkWorkbook(
   fileName: string
 ): { db: AppDatabase; imported: number; message: string } {
   const now = new Date().toISOString();
+  const today = todayISO();
   let imported = 0;
   const settings = sheets["Настройки"];
   if (settings) {
     const cats: NamedColor[] = [];
+    const palette = ["#3B6FD9", "#7C5CBF", "#C9842A", "#2A9D6E", "#D45B7A", "#8B4A3B", "#4C8C4A", "#C9A227"];
     for (let r = 5; r <= 12; r++) {
       const name = String(settings[r]?.[1] ?? "").trim();
-      if (name && !/^категория/i.test(name) && name !== "Работает") {
-        cats.push({ id: createId("cat"), name, color: ["#3B6FD9", "#7C5CBF", "#C9842A", "#2A9D6E", "#D45B7A"][cats.length % 5] });
+      if (name && !/^категория/i.test(name)) {
+        cats.push({ id: createId("cat"), name, color: palette[cats.length % palette.length] });
       }
     }
     if (cats.length) db.taskCategories = cats;
+
+    for (let r = 16; r <= 21; r++) {
+      const name = String(settings[r]?.[1] ?? "").trim();
+      if (!name || /^привычка/i.test(name)) continue;
+      if (db.habits.some((h) => h.name.toLowerCase() === name.toLowerCase())) continue;
+      const target = Math.min(7, Math.max(1, Number(settings[r]?.[2]) || 7));
+      db.habits.push({
+        id: createId("habit"),
+        name,
+        weeklyTarget: target,
+        startDate: today,
+        color: palette[(r - 16) % palette.length],
+        category: "",
+        anchorAction: "",
+        archived: false,
+        createdAt: now,
+        updatedAt: now,
+        source: "import",
+      });
+      imported += 1;
+    }
   }
+
+  const dayCols = [2, 4, 6, 8, 10, 12, 14];
+  const doneCols = [1, 3, 5, 7, 9, 11, 13];
 
   for (const [name, grid] of Object.entries(sheets)) {
     if (SKIP_SHEETS.has(name.toLowerCase())) continue;
     if (!WEEK_NAME.test(name)) continue;
     const start = startOfWeek(name);
     if (db.weeks.some((w) => w.startDate === start)) continue;
-    const weekId = createId("week");
-    const goal = String(grid[7]?.[1] ?? "").trim();
-    db.weeks.push({
-      id: weekId,
-      startDate: start,
-      goal,
-      weeklyBigThree: ["", "", ""],
-      goalReached: false,
+    const week = makeWeek(start, "import", {
+      goal: String(grid[7]?.[1] ?? "").trim(),
+      goalReached: truthy(grid[7]?.[13]),
       review: {
-        doneSummary: String(grid[119]?.[1] ?? ""),
-        leftover: "",
-        blockers: String(grid[120]?.[1] ?? ""),
-        carryNotes: String(grid[123]?.[1] ?? ""),
-        nextWeekBigThree: ["", "", ""],
-        rating: Number(grid[126]?.[1]) || null,
+        ...emptyReview(),
+        doneSummary: String(grid[118]?.[1] ?? grid[117]?.[1] ?? "").trim(),
+        blockers: String(grid[121]?.[1] ?? grid[120]?.[1] ?? "").trim(),
+        carryNotes: String(grid[124]?.[1] ?? grid[123]?.[1] ?? "").trim(),
+        rating: Number(grid[127]?.[1] ?? grid[126]?.[1]) || null,
       },
-      createdAt: now,
-      updatedAt: now,
-      source: "import",
     });
+    db.weeks.push(week);
     imported += 1;
 
-    const dayCols = [2, 4, 6, 8, 10, 12, 14];
-    const doneCols = [1, 3, 5, 7, 9, 11, 13];
     for (let day = 0; day < 7; day++) {
-      const date = `${start.slice(0, 8)}${String(Number(start.slice(8)) + day).padStart(2, "0")}`;
       const iso = addDateSafe(start, day);
-      for (let row = 31; row <= 42; row++) {
-        const raw = grid[row]?.[dayCols[day]];
-        const titleRaw = String(raw ?? "").trim();
+      for (let row = 31; row <= 43; row++) {
+        const titleRaw = String(grid[row]?.[dayCols[day]] ?? "").trim();
         if (!titleRaw || titleRaw === "0") continue;
         const parsed = parseHashtag(titleRaw, db.taskCategories);
-        const done = Boolean(grid[row]?.[doneCols[day]]);
         const task: Task = {
           id: createId("task"),
-          weekId,
+          weekId: week.id,
           title: parsed.title,
           date: iso,
           categoryId: parsed.categoryId,
           dueDate: iso,
-          status: done ? "done" : "open",
+          status: truthy(grid[row]?.[doneCols[day]]) ? "done" : "open",
           note: "",
           isBig: row <= 33,
           isWeeklyBig: false,
@@ -194,6 +207,44 @@ export function applyWeekmarkWorkbook(
         imported += 1;
       }
     }
+
+    const activeHabits = db.habits.filter((h) => !h.archived);
+    for (let i = 0; i < activeHabits.length && i < 6; i++) {
+      const row = 48 + i;
+      for (let day = 0; day < 7; day++) {
+        if (!truthy(grid[row]?.[doneCols[day]])) continue;
+        const date = addDateSafe(start, day);
+        if (db.habitLogs.some((l) => l.habitId === activeHabits[i].id && l.date === date)) continue;
+        db.habitLogs.push({
+          id: createId("hlog"),
+          habitId: activeHabits[i].id,
+          date,
+          done: true,
+          skipped: false,
+          comment: "",
+          createdAt: now,
+          updatedAt: now,
+          source: "import",
+        });
+        imported += 1;
+      }
+    }
+  }
+
+  const totals = sheets["Итоги"];
+  if (totals) {
+    for (let r = 5; r < totals.length; r++) {
+      const sheetName = String(totals[r]?.[1] ?? "");
+      if (!WEEK_NAME.test(sheetName)) continue;
+      const start = startOfWeek(sheetName);
+      const week = db.weeks.find((w) => w.startDate === start);
+      if (!week) continue;
+      const goal = String(totals[r]?.[3] ?? "").trim();
+      if (goal) week.goal = goal;
+      if (truthy(totals[r]?.[4])) week.goalReached = true;
+      const rating = Number(totals[r]?.[9]);
+      if (rating >= 1 && rating <= 5) week.review.rating = rating;
+    }
   }
 
   const extra = sheets["Доп. задачи"];
@@ -204,14 +255,15 @@ export function applyWeekmarkWorkbook(
       const parsed = parseHashtag(titleRaw, db.taskCategories);
       const due = cellDate(extra[r]?.[2]);
       const prioRaw = String(extra[r]?.[4] ?? "");
+      const done = truthy(extra[r]?.[0]);
       db.backlog.push({
         id: createId("back"),
         title: parsed.title,
         dueDate: due,
         priority: prioRaw.includes("Высок") ? "high" : prioRaw.includes("Низк") ? "low" : "medium",
-        status: extra[r]?.[0] ? "done" : "open",
+        status: done ? "done" : "open",
         categoryId: parsed.categoryId,
-        note: "Импорт дополнительных задач",
+        note: due && !done && due < today ? "просрочено" : "",
         createdAt: now,
         updatedAt: now,
         source: "import",
@@ -226,7 +278,7 @@ export function applyWeekmarkWorkbook(
     fileName,
     sourceKind: "week-plan",
     status: "imported",
-    message: "Импортированы недели, задачи и бэклог. Служебные формулы и лист «Итоги» пропущены.",
+    message: "Импортированы недели, задачи, привычки, бэклог и оценки из архива. Служебные формулы пропущены.",
     importedCount: imported,
   });
   return { db, imported, message: `Импортировано записей: ${imported}` };
@@ -280,17 +332,7 @@ export function applyMappedCsv(
       const weekStart = startOfWeek(date ?? new Date().toISOString().slice(0, 10));
       let week = db.weeks.find((w) => w.startDate === weekStart);
       if (!week) {
-        week = {
-          id: createId("week"),
-          startDate: weekStart,
-          goal: "",
-          weeklyBigThree: ["", "", ""],
-          goalReached: false,
-          review: { doneSummary: "", leftover: "", blockers: "", carryNotes: "", nextWeekBigThree: ["", "", ""], rating: null },
-          createdAt: now,
-          updatedAt: now,
-          source,
-        };
+        week = makeWeek(weekStart, source);
         db.weeks.push(week);
       }
       db.tasks.push({

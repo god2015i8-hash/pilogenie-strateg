@@ -5,7 +5,8 @@ import { useApp } from "@/src/state/AppProvider";
 import { Field, GhostButton, PrimaryButton, Screen, Subtitle, Title } from "@/src/ui/components";
 import { createId } from "@/src/lib/id";
 import { startOfWeek, todayISO } from "@/src/lib/dates";
-import { canAddBigTask, dayTasks } from "@/src/services/planService";
+import { parseHashtag, withCategoryTag } from "@/src/lib/tags";
+import { canAddBigTask, dayTasks, makeWeek } from "@/src/services/planService";
 
 export default function TaskForm() {
   const { db, update } = useApp();
@@ -22,31 +23,40 @@ export default function TaskForm() {
   const [priority, setPriority] = useState(backlogItem?.priority ?? "medium");
   const [error, setError] = useState("");
 
+  const taggedTitle = () => {
+    const cat = db.taskCategories.find((x) => x.id === categoryId) ?? null;
+    const parsed = parseHashtag(title, db.taskCategories);
+    return withCategoryTag(parsed.title, cat);
+  };
+
   const save = async () => {
     if (!title.trim()) {
       setError("Введите название");
       return;
     }
     const now = new Date().toISOString();
+    const finalTitle = taggedTitle();
+    const parsed = parseHashtag(finalTitle, db.taskCategories);
     if (isBacklog) {
       await update((d) => {
         if (backlogItem) {
           const x = d.backlog.find((i) => i.id === backlogItem.id);
           if (x) {
-            x.title = title.trim();
+            x.title = parsed.title;
             x.note = note;
             x.priority = priority;
             x.dueDate = date;
+            x.categoryId = parsed.categoryId;
             x.updatedAt = now;
           }
         } else {
           d.backlog.push({
             id: createId("back"),
-            title: title.trim(),
+            title: parsed.title,
             dueDate: date,
             priority,
             status: "open",
-            categoryId: categoryId || null,
+            categoryId: parsed.categoryId,
             note,
             createdAt: now,
             updatedAt: now,
@@ -62,17 +72,7 @@ export default function TaskForm() {
     await update((d) => {
       let week = d.weeks.find((w) => w.id === params.weekId) ?? d.weeks.find((w) => w.startDate === weekStart);
       if (!week) {
-        week = {
-          id: createId("week"),
-          startDate: weekStart,
-          goal: "",
-          weeklyBigThree: ["", "", ""],
-          goalReached: false,
-          review: { doneSummary: "", leftover: "", blockers: "", carryNotes: "", nextWeekBigThree: ["", "", ""], rating: null },
-          createdAt: now,
-          updatedAt: now,
-          source: "manual",
-        };
+        week = makeWeek(weekStart, "manual");
         d.weeks.push(week);
       }
       const day = dayTasks(d, date);
@@ -80,10 +80,10 @@ export default function TaskForm() {
       if (existing) {
         const t = d.tasks.find((x) => x.id === existing.id);
         if (t) {
-          t.title = title.trim();
+          t.title = parsed.title;
           t.date = date;
           t.note = note;
-          t.categoryId = categoryId || null;
+          t.categoryId = parsed.categoryId;
           t.isBig = wantBig;
           t.updatedAt = now;
         }
@@ -91,9 +91,9 @@ export default function TaskForm() {
         d.tasks.push({
           id: createId("task"),
           weekId: week.id,
-          title: title.trim(),
+          title: parsed.title,
           date,
-          categoryId: categoryId || null,
+          categoryId: parsed.categoryId,
           dueDate: date,
           status: "open",
           note,
@@ -130,7 +130,15 @@ export default function TaskForm() {
   return (
     <Screen>
       <Title>{isBacklog ? "Дополнительная задача" : "Задача"}</Title>
-      <Field label="Название" value={title} onChangeText={setTitle} />
+      <Field
+        label="Название (тег #категория подсветит задачу)"
+        value={title}
+        onChangeText={(v) => {
+          setTitle(v);
+          const parsed = parseHashtag(v, db.taskCategories);
+          if (parsed.categoryId) setCategoryId(parsed.categoryId);
+        }}
+      />
       <Field label="Дата (ГГГГ-ММ-ДД)" value={date} onChangeText={setDate} />
       <Field label="Заметка" value={note} onChangeText={setNote} multiline />
       <Subtitle>Категория</Subtitle>

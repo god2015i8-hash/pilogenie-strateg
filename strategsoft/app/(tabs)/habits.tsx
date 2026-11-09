@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useApp } from "@/src/state/AppProvider";
 import { Card, EmptyState, GhostButton, Screen, Subtitle, Title, useThemeColors } from "@/src/ui/components";
 import { monthGrid, todayISO } from "@/src/lib/dates";
-import { createId } from "@/src/lib/id";
-import { currentStreak, logsForHabit, monthHabitStats, weekHabitStats, yearHabitStats } from "@/src/services/habitService";
+import { currentStreak, logsForHabit, monthHabitStats, toggleHabitLog, weekHabitStats, yearHabitStats } from "@/src/services/habitService";
 import type { Habit } from "@/src/types/models";
 
 export default function HabitsScreen() {
@@ -20,32 +19,7 @@ export default function HabitsScreen() {
   const active = db.habits.filter((h) => !h.archived);
 
   const toggle = async (habit: Habit, date = today) => {
-    await update((d) => {
-      const existing = d.habitLogs.find((l) => l.habitId === habit.id && l.date === date);
-      const now = new Date().toISOString();
-      if (existing) {
-        if (existing.done) {
-          existing.done = false;
-          existing.skipped = true;
-        } else {
-          existing.done = true;
-          existing.skipped = false;
-        }
-        existing.updatedAt = now;
-      } else {
-        d.habitLogs.push({
-          id: createId("hlog"),
-          habitId: habit.id,
-          date,
-          done: true,
-          skipped: false,
-          comment: "",
-          createdAt: now,
-          updatedAt: now,
-          source: "manual",
-        });
-      }
-    });
+    await update((d) => toggleHabitLog(d, habit.id, date));
   };
 
   const remove = (habit: Habit) => {
@@ -66,6 +40,7 @@ export default function HabitsScreen() {
   return (
     <Screen>
       <Title>Привычки</Title>
+      <GhostButton label="Инструкция раздела" onPress={() => router.push("/guides/habits-how")} />
       <GhostButton label="Новая привычка" onPress={() => router.push("/habit-form")} />
       {!active.length ? <EmptyState title="Пока нет привычек" action="Добавить" onAction={() => router.push("/habit-form")} /> : null}
       {active.map((habit) => {

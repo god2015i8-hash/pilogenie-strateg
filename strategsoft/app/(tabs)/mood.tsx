@@ -23,6 +23,7 @@ export default function MoodScreen() {
     <Screen>
       <Title>Состояние</Title>
       <Subtitle>Это дневник наблюдений, а не диагноз и не медицинский вывод.</Subtitle>
+      <GhostButton label="Инструкция раздела" onPress={() => router.push("/guides/mood-how")} />
       <GhostButton label="Запись на сегодня" onPress={() => router.push({ pathname: "/mood-form", params: { date: today } })} />
       <GhostButton label="Разбор трудного момента" onPress={() => router.push("/moment-form")} />
 

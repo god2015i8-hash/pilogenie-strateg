@@ -35,6 +35,7 @@ export default function FinanceScreen() {
   return (
     <Screen>
       <Title>Финансы</Title>
+      <GhostButton label="Инструкция раздела" onPress={() => router.push("/guides/finance-how")} />
       <GhostButton label="Новая операция" onPress={() => router.push("/tx-form")} />
       <GhostButton label="Импорт CSV/XLSX" onPress={() => router.push("/import")} />
 

@@ -1,5 +1,6 @@
 import { addDays, endOfMonth, inRange, startOfMonth, startOfWeek, todayISO } from "../lib/dates";
-import type { AppDatabase, Habit, HabitLog, ISODate } from "../types/models";
+import { createId } from "../lib/id";
+import type { AppDatabase, Habit, HabitLog, ISODate, RecordSource } from "../types/models";
 
 export function logsForHabit(db: AppDatabase, habitId: string): HabitLog[] {
   return db.habitLogs.filter((l) => l.habitId === habitId);
@@ -54,4 +55,38 @@ export function todayHabitProgress(db: AppDatabase, date: ISODate) {
     db.habitLogs.some((l) => l.habitId === h.id && l.date === date && l.done)
   );
   return { total: active.length, done: done.length };
+}
+
+export function toggleHabitLog(db: AppDatabase, habitId: string, date: ISODate, source: RecordSource = "manual") {
+  const existing = db.habitLogs.find((l) => l.habitId === habitId && l.date === date);
+  const now = new Date().toISOString();
+  if (existing) {
+    existing.done = !existing.done;
+    existing.skipped = !existing.done;
+    existing.updatedAt = now;
+    return;
+  }
+  db.habitLogs.push({
+    id: createId("hlog"),
+    habitId,
+    date,
+    done: true,
+    skipped: false,
+    comment: "",
+    createdAt: now,
+    updatedAt: now,
+    source,
+  });
+}
+
+export function weekHabitGrid(db: AppDatabase, start: ISODate) {
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  return db.habits
+    .filter((h) => !h.archived)
+    .map((habit) => {
+      const logs = logsForHabit(db, habit.id);
+      const checks = dates.map((date) => Boolean(logs.find((l) => l.date === date && l.done)));
+      const done = checks.filter(Boolean).length;
+      return { habit, dates, checks, done, target: habit.weeklyTarget };
+    });
 }

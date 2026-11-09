@@ -1,5 +1,25 @@
 import { addDays, startOfWeek, weekDates, weekdayIndex } from "../lib/dates";
-import type { AppDatabase, ISODate, Task, WeekPlan } from "../types/models";
+import { createId } from "../lib/id";
+import type { AppDatabase, BacklogTask, ISODate, RecordSource, Task, WeekPlan } from "../types/models";
+
+export function emptyReview(): WeekPlan["review"] {
+  return { doneSummary: "", leftover: "", blockers: "", carryNotes: "", nextWeekBigThree: ["", "", ""], rating: null };
+}
+
+export function makeWeek(startDate: ISODate, source: RecordSource, extras: Partial<WeekPlan> = {}): WeekPlan {
+  const now = new Date().toISOString();
+  return {
+    id: createId("week"),
+    startDate,
+    goal: extras.goal ?? "",
+    weeklyBigThree: extras.weeklyBigThree ?? ["", "", ""],
+    goalReached: extras.goalReached ?? false,
+    review: extras.review ?? emptyReview(),
+    createdAt: extras.createdAt ?? now,
+    updatedAt: extras.updatedAt ?? now,
+    source,
+  };
+}
 
 export function getOrSuggestWeek(db: AppDatabase, date: ISODate): WeekPlan | undefined {
   const start = startOfWeek(date);
@@ -72,4 +92,83 @@ export function tasksByWeekday(tasks: Task[], start: ISODate) {
     weekday: weekdayIndex(date),
     tasks: tasks.filter((t) => t.date === date),
   }));
+}
+
+export function dayProgress(tasks: Task[]) {
+  const active = tasks.filter((t) => t.status !== "cancelled");
+  const done = active.filter((t) => t.status === "done").length;
+  return {
+    total: active.length,
+    done,
+    leftover: active.length - done,
+    text: `всего ${active.length} · готово ${done} · осталось ${active.length - done}`,
+  };
+}
+
+export function previousWeekUnfinished(db: AppDatabase, start: ISODate): Task[] {
+  const prev = db.weeks.find((w) => w.startDate === previousWeekStart(start));
+  if (!prev) return [];
+  return unfinishedForCarry(weekTasks(db, prev.id));
+}
+
+export function compareWeeks(current: ReturnType<typeof weekProgress>, previous: ReturnType<typeof weekProgress> | null) {
+  if (!previous) return { percentDelta: null, bigDelta: null, previous };
+  return {
+    percentDelta: current.percent - previous.percent,
+    bigDelta: current.bigPercent - previous.bigPercent,
+    previous,
+  };
+}
+
+export function archiveRows(db: AppDatabase) {
+  return [...db.weeks]
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .map((week) => {
+      const stats = weekProgress(weekTasks(db, week.id));
+      return { week, stats };
+    });
+}
+
+export function archiveSummary(rows: ReturnType<typeof archiveRows>) {
+  const withTasks = rows.filter((r) => r.stats.total > 0);
+  const percents = withTasks.map((r) => r.stats.percent);
+  const goalsHit = rows.filter((r) => r.week.goalReached).length;
+  const ratings = rows.map((r) => r.week.review.rating).filter((n): n is number => n != null);
+  return {
+    weeks: rows.length,
+    averagePercent: percents.length ? Math.round(percents.reduce((a, b) => a + b, 0) / percents.length) : 0,
+    bestPercent: percents.length ? Math.max(...percents) : 0,
+    worstPercent: percents.length ? Math.min(...percents) : 0,
+    goalsHit,
+    averageRating: ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null,
+  };
+}
+
+export function backlogStats(items: BacklogTask[], today: ISODate) {
+  const open = items.filter((i) => i.status === "open");
+  const done = items.filter((i) => i.status === "done");
+  const overdue = open.filter((i) => i.dueDate && i.dueDate < today);
+  const byPriority = {
+    high: open.filter((i) => i.priority === "high").length,
+    medium: open.filter((i) => i.priority === "medium").length,
+    low: open.filter((i) => i.priority === "low").length,
+  };
+  return {
+    total: items.length,
+    done: done.length,
+    leftover: open.length,
+    overdue: overdue.length,
+    percent: items.length ? Math.round((done.length / items.length) * 100) : 0,
+    byPriority,
+  };
+}
+
+export function seedWeekFromPrevious(db: AppDatabase, start: ISODate): Partial<WeekPlan> {
+  const prev = db.weeks.find((w) => w.startDate === previousWeekStart(start));
+  if (!prev) return {};
+  const nextThree = prev.review.nextWeekBigThree;
+  const hasNext = nextThree.some(Boolean);
+  return {
+    weeklyBigThree: hasNext ? nextThree : ["", "", ""],
+  };
 }

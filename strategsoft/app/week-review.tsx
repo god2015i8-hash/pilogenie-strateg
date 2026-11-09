@@ -2,7 +2,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { useApp } from "@/src/state/AppProvider";
 import { Field, GhostButton, PrimaryButton, Screen, Subtitle, Title } from "@/src/ui/components";
-import { weekProgress, weekTasks } from "@/src/services/planService";
+import { addDays } from "@/src/lib/dates";
+import { progressBar } from "@/src/lib/tags";
+import { compareWeeks, unfinishedForCarry, weekProgress, weekTasks } from "@/src/services/planService";
 
 export default function WeekReviewScreen() {
   const { db, update } = useApp();
@@ -11,6 +13,9 @@ export default function WeekReviewScreen() {
   const week = db.weeks.find((w) => w.id === weekId);
   const tasks = week ? weekTasks(db, week.id) : [];
   const stats = weekProgress(tasks);
+  const leftoverList = unfinishedForCarry(tasks);
+  const prev = week ? db.weeks.find((w) => w.startDate === addDays(week.startDate, -7)) : undefined;
+  const cmp = compareWeeks(stats, prev ? weekProgress(weekTasks(db, prev.id)) : null);
   const [goal, setGoal] = useState(week?.goal ?? "");
   const [a, setA] = useState(week?.weeklyBigThree[0] ?? "");
   const [b, setB] = useState(week?.weeklyBigThree[1] ?? "");
@@ -55,8 +60,20 @@ export default function WeekReviewScreen() {
     <Screen>
       <Title>{mode === "setup" ? "Цель недели" : "Обзор недели"}</Title>
       <Subtitle>
-        Сделано {stats.done} из {stats.total}. Осталось {stats.leftover}.
+        Сделано {stats.done} из {stats.total} · осталось {stats.leftover} · главные {stats.bigDone}/{stats.bigTotal}
       </Subtitle>
+      <Subtitle>{progressBar(stats.percent)} {stats.percent}%</Subtitle>
+      {cmp.percentDelta != null ? (
+        <Subtitle>
+          Сравнение с прошлой неделей: {cmp.previous?.percent}% → {stats.percent}% ({cmp.percentDelta > 0 ? "+" : ""}
+          {cmp.percentDelta})
+        </Subtitle>
+      ) : (
+        <Subtitle>Прошлой недели в архиве нет — сравнивать пока не с чем.</Subtitle>
+      )}
+      {leftoverList.length ? (
+        <Subtitle>Открыто: {leftoverList.map((t) => t.title).join("; ")}</Subtitle>
+      ) : null}
       <Field label="Цель недели" value={goal} onChangeText={setGoal} />
       <Field label="Главное дело недели 1" value={a} onChangeText={setA} />
       <Field label="Главное дело недели 2" value={b} onChangeText={setB} />

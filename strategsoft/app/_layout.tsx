@@ -26,8 +26,8 @@ function ThemedNav() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="goals/index" options={{ title: "Цели" }} />
-        <Stack.Screen name="guides/index" options={{ title: "Руководства" }} />
-        <Stack.Screen name="guides/[id]" options={{ title: "Методика" }} />
+        <Stack.Screen name="guides/index" options={{ title: "Инструкции" }} />
+        <Stack.Screen name="guides/[id]" options={{ title: "Инструкция" }} />
         <Stack.Screen name="settings" options={{ title: "Настройки" }} />
         <Stack.Screen name="import" options={{ title: "Импорт" }} />
         <Stack.Screen name="task-form" options={{ title: "Задача", presentation: "modal" }} />
