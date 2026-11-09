@@ -1,0 +1,12 @@
+strategsoft/node_modules/
+strategsoft/.expo/
+strategsoft/dist/
+strategsoft/web-build/
+strategsoft/expo-env.d.ts
+_xlsx_unzip/
+_inspect_xlsx.js
+_inspect_out.txt
+.DS_Store
+*.log
+.env
+.env.*
